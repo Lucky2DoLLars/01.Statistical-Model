@@ -1,0 +1,117 @@
+rm(list = ls())
+
+
+set.seed(1)
+
+p <- 3
+n <- 100
+x <- matrix(rnorm(n*p),nrow = n, ncol = p)
+x = cbind(rep(1,n),x)
+
+true.beta <- c(1,1,-1,1.5)
+true.eta <- x %*% true.beta
+true.mu <- exp(true.eta)
+y <- rpois(n, true.mu)
+
+x = x[,-1]
+
+
+
+
+mcmc <- function(x, y, init = FALSE, n.sample = 10000, step = FALSE){
+  
+  n = nrow(x)
+  p = ncol(x)
+  
+  if(init == FALSE){
+    init = rep(0,p + 1)
+  }
+
+  
+  if(step == FALSE){
+    step = rep(0.3, p + 1)
+  }
+  
+  x = cbind(rep(1,n),x)
+  
+  post.beta <- matrix(0,nrow = n.sample, ncol = p + 1)
+  ac.ratio <- matrix(0,nrow = n.sample, ncol = p + 1)
+  
+  prior.m <- 0
+  prior.s <- 1000^3  # for vague prior
+  
+  # intialize
+  post.beta[1,] <- beta <- init
+  eta <- x %*% beta
+  mu <- exp(eta)
+  
+  log.prior <- sum(dnorm(beta, prior.m, prior.s, log = T))
+  log.like  <- sum(-mu + y * log(mu))
+  
+  iter <- 2
+  
+  for (iter in 1:n.sample)
+  {
+    beta.new <- beta
+    
+    for (j in 1:(p + 1))
+    {
+      # candidate
+      beta.new[j] <- beta[j] + rnorm(1, 0, step[j]) 
+      eta.new <- x %*% beta.new
+      mu.new  <- exp(eta.new)
+      
+      # prior
+      log.prior     <- dnorm(beta[j],     prior.m, prior.s, log = T)
+      log.prior.new <- dnorm(beta.new[j], prior.m, prior.s, log = T)
+      
+      # liklihood
+      log.like.new <- sum(-mu.new + y *log(mu.new))
+      
+      # ratio
+      temp <- exp((log.like.new + log.prior.new) - (log.like + log.prior))
+      rho <- min(1, temp)
+      
+      
+      if (runif(1) < rho){
+        ac.ratio[iter] <- 1
+        beta[j] <- beta.new[j]
+        log.prior <- log.prior.new
+        log.like  <- log.like.new
+      }
+    }
+    post.beta[iter,] <- beta
+  }
+  
+  samples = post.beta
+  return(samples)
+}
+
+
+set.seed(5)
+
+p <- 3
+n <- 100
+x <- matrix(rnorm(n*p),nrow = n, ncol = p)
+x = cbind(rep(1,n),x)
+
+true.beta <- c(1,2,-1,3)
+true.eta <- x %*% true.beta
+true.mu <- exp(true.eta)
+y <- rpois(n, true.mu)
+x = x[,-1]
+
+# mle 
+obj.mle <- glm(y ~ x, family = "poisson")
+print(mle <- coef(obj.mle))
+
+# MH for Bayesian logit
+obj <- mcmc(x, y, n.sample = 10000)
+posterior <- obj[-(1:2000),]
+print(est <- colMeans(posterior))
+
+cr <- t(apply(posterior, 2, quantile, c(0.025, 0.975))) # Credible Region
+print("CR for posteiors:")
+print(cr)
+
+print(confint(obj.mle))
