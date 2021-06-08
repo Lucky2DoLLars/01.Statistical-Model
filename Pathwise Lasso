@@ -1,0 +1,101 @@
+pathwise_lasso = function(x, y, lambda_v){
+  
+  S <- function(z, lambda) {
+    (z - lambda) * (z > lambda) + 
+      (z + lambda) * (z < -lambda) + 
+      0 * (abs(z) <= lambda)
+  }
+  
+  cd.lasso <- function(x, y, lambda, p, n, beta_init = FALSE, initial = FALSE)
+  {
+    
+    if (initial == TRUE){
+      beta <- beta_init
+      r <- u - z %*% beta
+    }else{
+      beta <- coef(lm(u ~ z - 1))
+      r <- u - z %*% beta
+    }
+    
+    for (iter in 1:100) {
+      new.beta <- beta
+      for (j in 1:p) {
+        temp <- beta[j] + crossprod(z[,j], r)/n
+        new.beta[j] <- S(temp, lambda/s[j]) 
+        r <- r - (new.beta[j] - beta[j]) * z[,j]
+      }
+      delta <- max(abs(new.beta - beta))
+      if (delta < 1.0e-3) break
+      beta <- new.beta
+    }
+    
+    return(new.beta)
+  }
+  
+  # CD algorithm for lasso
+  # marginal standardization of x
+  
+  z <- scale(x)
+  m <- attr(z, "scaled:center")
+  s <- attr(z, "scaled:scale")
+  
+  # centering of y
+  u <- (y - mean(y))
+  
+  p = ncol(x)
+  n = nrow(x)
+  
+  beta_list = list()
+  
+  beta_list[[1]] = cd.lasso(z, u, lambda_v[1], p,n, beta_init = FALSE, initial = FALSE)
+  
+  for (i in 2:length(lambda_v)){
+    
+    beta_list[[i]] = cd.lasso(x, y, lambda_v[i], p, n,
+                              beta_init = beta_list[[i-1]],
+                              initial = TRUE)
+    
+  }
+  
+  
+  for(i in 1:length(beta_list)){
+    
+    beta <- beta_list[[i]]/s 
+    beta0 = mean(y) - crossprod(beta, m)
+    beta_list[[i]] = c(beta0, beta)
+    
+  }
+  
+  return(beta_list)
+}
+
+
+
+#############HW
+train <- matrix(scan("C:/Users/Administrator/Desktop/고려대1학기/통계계산/train.txt"), 500, 51)
+test <- matrix(scan("C:/Users/Administrator/Desktop/고려대1학기/통계계산/test.txt"), 500, 51)
+
+x <- train[,-51]
+y <- train[,51]
+
+x.test <- test[,-51]
+y.test <- test[,51]
+
+## 3. glmnet
+
+x.test = cbind(rep(1,length(50)),x.test)
+
+
+lambda_v = seq(from=0,to=0.3,length.out=100)
+lasso_train = pathwise_lasso(x,y,lambda_v)
+
+mse_v = rep(0,length(lambda_v))
+for(i in 1:length(lambda_v)){
+  y_pred = x.test %*% lasso_train[[i]]
+  mse_v[i] = sum((y.test-y_pred)^2)
+}
+
+
+lambda_v[which.min(mse_v)]
+
+lasso_train[[9]]
