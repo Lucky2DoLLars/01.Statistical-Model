@@ -1,0 +1,38 @@
+mm.qr <- function(x, y, tau = 0.5, max.iter = 100){
+  
+  a_0 = 0
+  b_0 = 0
+  x_m = mean(x)
+  
+  n = length(x)
+  
+  # slope(beta)
+  
+  for (i in 1:max.iter){
+    
+    w = 1/abs(y - (a_0 + x*b_0) + 1.0e-10 )
+    
+    a_1 = (n*(2*tau - 1) + sum((y-x*b_0)*w)) / sum(w)
+    
+    w = 1/abs(y - (a_1 + x*b_0) + 1.0e-10 )
+    
+    b_1 = (n*(2*tau - 1)*x_m + sum((y-a_1)*w*x)) / sum(x^2*w)
+    
+    b_0 = b_1
+    
+    a_0 = a_1
+  
+    
+  }
+
+  return(c(a_1,b_1))
+}
+
+
+n = 10000
+x = rnorm(n)
+true.b = 74
+y = 558 + true.b*x + rnorm(n,0,5)
+
+coef(lm(y~x))
+mm.qr(x,y,max.iter=500)
