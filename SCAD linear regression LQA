@@ -1,0 +1,109 @@
+# SCAD LQA
+
+
+scad_penalty = function(beta, lambda, a = 3.7)  # beta is just one coefficient
+{
+  if (beta <= lambda)
+  {
+    lambda
+  }else{
+    lambda * (a*lambda - beta)*(a*lambda - beta >= 0)/((a-1)*lambda) 
+  }
+}
+
+
+lqa_weight = function(beta_v, lambda, a = 3.7)  # beta_v is the vector of coefficient
+{
+  
+  weight_v = rep(NA, length(beta_v))
+  
+  for (i in 1:length(weight_v))
+  {
+    weight_v[i] = scad_penalty(beta_v[i], lambda, a)
+  }
+  
+  return( diag(weight_v))
+}
+
+
+
+
+
+
+scad_lqa = function(x, y, lambda, a = 3.7, ep = 10^-3, max_iter = 100)
+{
+  
+  n = length(y)
+  p = ncol(x)
+  
+  # marginal standardization of x
+  
+  x = scale(x)
+  m = attr(x, "scaled:center")
+  s = attr(x, "scaled:scale")
+    
+  # centering of y
+  my = mean(y)
+  y = y - my
+   
+
+  # initializing (OLSE)
+
+  beta_init = coef(lm(y~x-1))
+  
+  beta_0 = beta_init
+  
+  for (i in 1:max_iter)
+  {
+  
+  # LQA updating equation
+  
+  LHS = t(x)%*%x + 2*n*lqa_weight(beta_0, lambda, a)
+  RHS = t(x) %*% y
+  
+  QR = qr(LHS)
+  beta_1 = qr.solve(QR,RHS)
+  
+  # beta set zero
+  
+  beta_1[which(abs(beta_1) < ep)] = 0
+  
+  beta_0 = beta_1
+  
+  }
+  
+  beta = beta_0
+  
+  # transform back
+  
+  beta = beta / s
+  
+  beta0 = my - m %*% beta
+  
+  index = which(abs(beta) > 0)
+  beta.info = beta[index]
+  
+  obj = list(intercept = beta0,
+             beta = beta.info,
+             index = index)
+
+  
+  return(obj)
+}
+
+
+
+# data
+
+set.seed(1)
+n <- 100
+p <- 5
+
+d <- 2
+beta <- c(rep(1, d), rep(0, p-d))
+
+x <- matrix(rnorm(n*p), n, p)
+e <- rnorm(n)
+y <- x %*% beta + e
+
+scad_lqa(x,y,lambda=0.20,ep=0.1)
