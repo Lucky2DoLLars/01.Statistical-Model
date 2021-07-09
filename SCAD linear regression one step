@@ -1,0 +1,103 @@
+#SCAD One-step Sparse Estimation
+
+
+scad_penalty = function(beta, lambda, a = 3.7)  # beta is just one coefficient
+{
+  if (beta <= lambda)
+  {
+    lambda
+  }else{
+    lambda * (a*lambda - beta)*(a*lambda - beta >= 0)/((a-1)*lambda) 
+  }
+}
+
+lla_weight = function(beta_v, lambda, a = 3.7)  # beta_v is the vector of coefficient
+{
+  
+  weight_v = rep(NA,length(beta_v))
+  for (i in 1:length(beta_v))
+  {
+    weight_v[i] = scad_penalty(beta_v[i], lambda, a)
+  }
+  
+  return(weight_v)
+}
+
+S <- function(z, lambda) {
+  (z - lambda) * (z > lambda) + 
+    (z + lambda) * (z < -lambda) + 
+    0 * (abs(z) <= lambda)
+}
+
+
+
+scad_one_step = function(x, y, lambda, a = 3.7)
+{
+  n = length(y)
+  p = ncol(x)
+  
+  # marginal standardization of x
+  
+  x = scale(x)
+  m = attr(x, "scaled:center")
+  s = attr(x, "scaled:scale")
+  
+  # centering of y
+  
+  my = mean(y)
+  y = y - my
+  
+  # initializing (OLSE)
+  
+  beta = coef(lm(y~x-1))
+  r = y - x %*% beta
+  
+
+  new.beta = beta
+    
+  weight = lla_weight(beta, lambda, a = 3.7)
+    
+  for (j in 1:p)
+  {
+    temp = beta[j] + crossprod(x[,j], r)/n
+    new.beta[j] = S(temp, weight[j]/s[j]) 
+    r = r - (new.beta[j] - beta[j]) * x[,j]
+  }
+    
+  delta = max(abs(new.beta - beta))
+    
+  if (delta < 1.0e-3) break
+  beta = new.beta
+  
+  beta = beta / s
+  
+  beta0 = my - m %*% beta
+  
+  index = which(abs(beta) > 0)
+  beta.info = beta[index]
+  
+  obj = list(intercept = beta0,
+             beta = beta.info,
+             index = index)
+  
+  return(obj)
+}
+
+
+
+scad_one_step(x,y,lambda=0.205)
+
+
+
+# data
+
+set.seed(1)
+n <- 100
+p <- 5
+
+d <- 2
+beta <- c(rep(1, d), rep(0, p-d))
+
+x <- matrix(rnorm(n*p), n, p)
+e <- rnorm(n)
+y <- x %*% beta + e
