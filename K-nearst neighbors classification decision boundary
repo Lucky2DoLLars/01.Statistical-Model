@@ -1,7 +1,4 @@
 rm(list = ls())
-data(iris)
-x1 = iris$Sepal.Length
-x2 = iris$Sepal.Width
 
 knn.index = function(x_data, x_predict, K)
 {
@@ -34,6 +31,9 @@ knn.index = function(x_data, x_predict, K)
    return(index_result)
 }
 
+data(iris)
+x1 = iris$Sepal.Length
+x2 = iris$Sepal.Width
 x_data = cbind(x1, x2)
 
 K = 5
