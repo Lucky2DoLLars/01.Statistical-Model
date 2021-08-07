@@ -68,7 +68,7 @@ points(x1[iris$Species == "virginica"], x2[iris$Species == "virginica"],
        col = "green", pch = 5, cex = 1.5, lwd = 2)
 ```
 
-![](KNN-classifier-decision-boundary_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
+![](/image/knn_scatter_plot.png)<!-- -->
 
 ## decision boundary of KNN classifier
 
@@ -116,4 +116,4 @@ for (i in  1 : nrow(grid))
 }
 ```
 
-![](KNN-classifier-decision-boundary_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+![](/image/knn_decision_boundary.png)<!-- -->
