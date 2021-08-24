@@ -72,7 +72,7 @@ points(x1[iris$Species == "virginica"], x2[iris$Species == "virginica"],
 
 ## Decision boundary of KNN classifier
 
-we plot decision boundary of KNN classifier. Since it is non-parametric
+We plot decision boundary of KNN classifier. Since it is non-parametric
 method, there needs to form grid to plot decision boundary.
 
 ``` r
