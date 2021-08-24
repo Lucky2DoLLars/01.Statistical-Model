@@ -42,7 +42,7 @@ knn.index = function(x_data, x_predict, K)
 }
 ```
 
-## scatter plot
+## Scatter plot
 
 The following plot is the scatter plot of iris data using `Sepal.Length`
 and `Sepal.Width`.
@@ -70,7 +70,7 @@ points(x1[iris$Species == "virginica"], x2[iris$Species == "virginica"],
 
 ![](/image/knn_scatter_plot.png)<!-- -->
 
-## decision boundary of KNN classifier
+## Decision boundary of KNN classifier
 
 we plot decision boundary of KNN classifier. Since it is non-parametric
 method, there needs to form grid to plot decision boundary.
