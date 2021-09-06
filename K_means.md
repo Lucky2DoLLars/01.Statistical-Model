@@ -100,7 +100,7 @@ plot(X[,1], X[,2],
      xlab = "current eruption's duration")
 ```
 
-![](K_means_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
+![](image/k_means_1.png)<!-- -->
 
 이제, K-means 알고리즘을 통해 앞선 짐작이 타당한지 확인해보자. 아래는
 K-means 알고리즘을 수행한 결과이다. 데이터가 빨간색(cluster 1)과
@@ -128,4 +128,4 @@ legend("bottomright",
        col = c("red", "blue"))
 ```
 
-![](K_means_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+![](image/k_means_2.png)<!-- -->
