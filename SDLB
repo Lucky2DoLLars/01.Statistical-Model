@@ -1,0 +1,331 @@
+
+# 2019/07/28
+# genarate_initial_SDLB function added
+# plot_active_planes function added
+# SDLB_v2: list form ?????? ??????
+# 2019/07/27
+# ?????? ??????
+# SDLB module by JK
+# 2019/11/03
+# SDLB_v3: generalization of feeding process, BIC revision
+
+SDLB_bias = function(response,
+                predictors,
+                number_nodes = length(response),
+                type_initial = "qunatile",
+                center_initial = FALSE,
+                width_initial = FALSE,
+                interval_scale = 5,
+                bias = 0,
+                lambda = FALSE,
+                number_lambdas = 100,
+                lambda_max_min_ratio = 1e-10,
+                max_iter = 1000,
+                epsilon_iterations = 1e-04,
+                verbose1 = FALSE,
+                verbose2 = FALSE,
+                width_multiple,
+                BIC_early_stopping = FALSE)
+{
+   cat("=================================================\n")
+   cat("Single Deep Learning for Bivariate Predictors\n")
+   cat("R new version 3.1 by SDMLAB(JK) (June 27, 2019)\n")
+   cat("Department of Statistics, Korea University, Korea\n")
+   cat("=================================================\n")
+   
+   sdlb = list()
+   
+   # initial
+   if(type_initial == "Kmeans")
+   {
+      initial = initial_Kmeans_SDLB(predictors = predictors,
+                                    number_nodes = number_nodes,
+                                    interval_scale = interval_scale,
+                                    width_multiple = width_multiple)
+   }
+   else if(type_initial == "random")
+   {
+      initial = generate_initial_SDLB(predictors = predictors, 
+                                      number_nodes = number_nodes, 
+                                      interval_scale = width_multiple)
+   }
+   else if(type_initial == "quantile")
+   {
+      initial = initial_quantile_SDLB_new(predictors = predictors, 
+                                      number_nodes = number_nodes, 
+                                      scale_interval = width_multiple)
+      number_nodes = number_nodes^2
+   }
+   else
+   {
+      initial = generate_initial_manual(center = center_initial,
+                                        width = width_initial,
+                                        number_nodes = number_nodes)
+   }
+   
+   # initial values
+   beta_initial = rep(0, number_nodes)
+   alpha0_initial = initial$alpha0
+   alpha1_initial = initial$alpha1
+   
+   sample_size = length(response)
+   number_variables = ncol(predictors)
+   fitted_values = rep(0, sample_size)
+   residuals = rep(0, sample_size)
+   partial_residuals = rep(0, sample_size)
+   
+   # lambda max
+   alpha01 = alpha0_initial$alpha01
+   alpha02 = alpha0_initial$alpha02
+   alpha11 = alpha1_initial$alpha11
+   alpha12 = alpha1_initial$alpha12
+   m = rep(NA, number_nodes)
+   
+   for(j in seq_along(m))
+   {
+      m[j] = mean( y * bspline(alpha01[j] + alpha11[j] * x[, 1]) * bspline(alpha02[j] + alpha12[j] * x[, 2]))
+   }
+   
+   lambda_max = max(m)
+   
+   if(lambda > 0)
+   {
+      lambda_max = lambda
+   }
+   
+   # for list
+   lambda_list = lambdas_all(number_lambdas, lambda_max, lambda_max_min_ratio)
+   lambda_list = rev(lambda_list)
+   number_nodes_list = rep(0, number_lambdas)
+   iteration_list = rep(0, number_lambdas)
+   AIC_list = rep(NA, number_lambdas)
+   BIC_list = rep(NA, number_lambdas)
+   risk_list = rep(NA, number_lambdas)
+   
+   # for BIC early stopping
+   lambda_index_search = 1
+   BIC_early_stopping_crit = number_lambdas * 0.1
+   
+   # for feeding
+   planes = list(planes1 = matrix(0, sample_size, number_nodes),
+                 planes2 = matrix(0, sample_size, number_nodes))
+   active_planes = list(active_planes1 = matrix(0, sample_size, number_nodes),
+                        active_planes2 = matrix(0, sample_size, number_nodes))
+   dev_active_planes = list(dev_active_planes1 = matrix(0, sample_size, number_nodes),
+                            dev_active_planes2 = matrix(0, sample_size, number_nodes))
+   tensor_active_planes = matrix(1, sample_size, number_nodes)
+   initial_active_planes = matrix(0, sample_size, number_nodes)
+   active_nodes = 1:number_nodes
+   active1_nodes = 1:number_nodes
+   active2_nodes = 1:number_nodes
+   candidate_nodes = 1:number_nodes
+   number_active_nodes = number_nodes
+   stored_Rlambda = Inf
+   tiny = 1e-20
+   
+   beta = beta_initial
+   alpha0 = alpha0_initial
+   alpha1 = alpha1_initial
+   
+   # lambda
+   for(lambda_index in 1:number_lambdas)
+   {
+      if(verbose1)
+         cat("\n\n", lambda_index, "th lambda runs")
+      lambda = lambda_list[lambda_index]
+      
+      # list for stroing the coefficient for each lambda
+      # storing_lambda = list()
+      
+      fitted_values = rep(0, sample_size)
+      residuals = rep(0, sample_size)
+      partial_residuals = rep(0, sample_size)
+      
+      bias = 0
+      # reset storing elements
+      
+      planes = list(planes1 = matrix(0, sample_size, number_nodes),
+                    planes2 = matrix(0, sample_size, number_nodes))
+      active_planes = list(active_planes1 = matrix(0, sample_size, number_nodes),
+                           active_planes2 = matrix(0, sample_size, number_nodes))
+      dev_active_planes = list(dev_active_planes1 = matrix(0, sample_size, number_nodes),
+                               dev_active_planes2 = matrix(0, sample_size, number_nodes))
+      tensor_active_planes = matrix(1, sample_size, number_nodes)
+      
+      fitted_values = fitted_values + bias
+      for(m in 1:number_nodes)
+      {
+         for(j in 1:number_variables)
+         {
+            planes[[j]][, m] = alpha0[[j]][m] + alpha1[[j]][m] * predictors[, j]
+            active_planes[[j]][, m] = bspline(planes[[j]][, m])
+            dev_active_planes[[j]][, m] = derivative_bspline(planes[[j]][, m])
+            tensor_active_planes[, m] = tensor_active_planes[, m] * active_planes[[j]][, m]
+         }
+         fitted_values = fitted_values + beta[m] * tensor_active_planes[, m]
+      }
+      initial_active_planes = tensor_active_planes
+      residuals = response - fitted_values
+      
+      # iterations starts
+      for(iter in 1:max_iter)
+      {
+         if(verbose1)
+            cat("\n", iter, "th iteration runs \n")
+         # bias update added by KJG
+         partial_residuals = residuals + bias
+         bias = mean(partial_residuals)
+         residuals = partial_residuals - bias
+      
+         for(a in seq_along(active_nodes))
+         {
+            # beta update
+            m = active_nodes[a]
+            partial_residuals = residuals + beta[m] * tensor_active_planes[, m]
+            univariate_lasso_z = tensor_active_planes[, m]
+            univariate_lasso_y = partial_residuals
+            beta[m] = univariate_lasso_rss(univariate_lasso_y, 
+                                           univariate_lasso_z,
+                                           lambda, tiny)
+            residuals = partial_residuals - beta[m] * tensor_active_planes[, m]
+            
+            
+            # first activation
+            if(alpha1[[1]][m] != 0)
+            {
+               # alpha01
+               partial_residuals = residuals + beta[m] * tensor_active_planes[, m]
+               univariate_z = beta[m] * dev_active_planes[[1]][, m] * active_planes[[2]][, m]
+               univariate_y = residuals + univariate_z * alpha0[[1]][m]
+               alpha0[[1]][m] = univariate_lasso_rss(univariate_y,
+                                                     univariate_z,
+                                                     0, tiny)
+               planes[[1]][, m] = alpha0[[1]][m] + alpha1[[1]][m] * predictors[, 1]
+               active_planes[[1]][, m] = bspline(planes[[1]][, m])
+               dev_active_planes[[1]][, m] = derivative_bspline(planes[[1]][, m])
+               tensor_active_planes[, m] = active_planes[[1]][, m] * active_planes[[2]][, m]
+               residuals = partial_residuals - beta[m] * tensor_active_planes[, m]
+               # alpha11
+               partial_residuals = residuals + beta[m] * tensor_active_planes[, m]
+               univariate_lasso_z = beta[m] * dev_active_planes[[1]][, m] * active_planes[[2]][, m] * predictors[, 1]
+               univariate_lasso_y = residuals + univariate_lasso_z * alpha1[[1]][m]
+               alpha1[[1]][m] = univariate_lasso_rss(univariate_lasso_y,
+                                                     univariate_lasso_z,
+                                                     0, tiny) # alpha1 no penalty by KJG
+               
+               planes[[1]][, m] = alpha0[[1]][m] + alpha1[[1]][m] * predictors[, 1]
+               active_planes[[1]][, m] = bspline(planes[[1]][, m])
+               dev_active_planes[[1]][, m] = derivative_bspline(planes[[1]][, m])
+               tensor_active_planes[, m] = active_planes[[1]][, m] * active_planes[[2]][, m]
+               residuals = partial_residuals - beta[m] * tensor_active_planes[, m]
+            }
+            if(alpha1[[2]][m] != 0)
+            {
+               # alpha02
+               partial_residuals = residuals + beta[m] * tensor_active_planes[, m]
+               univariate_z = beta[m] * active_planes[[1]][, m] * dev_active_planes[[2]][, m]
+               univariate_y = residuals + univariate_z * alpha0[[2]][m]
+               alpha0[[2]][m] = univariate_lasso_rss(univariate_y,
+                                                     univariate_z,
+                                                     0, tiny)
+               planes[[2]][, m] = alpha0[[2]][m] + alpha1[[2]][m] * predictors[, 2]
+               active_planes[[2]][, m] = bspline(planes[[2]][, m])
+               dev_active_planes[[2]][, m] = derivative_bspline(planes[[2]][, m])
+               tensor_active_planes[, m] = active_planes[[1]][, m] * active_planes[[2]][, m]
+               residuals = partial_residuals - beta[m] * tensor_active_planes[, m]
+               # alpha12
+               partial_residuals = residuals + beta[m] * tensor_active_planes[, m]
+               univariate_lasso_z = beta[m] * active_planes[[1]][, m] * dev_active_planes[[2]][, m] * predictors[, 2]
+               univariate_lasso_y = residuals + univariate_lasso_z * alpha1[[2]][m]
+               alpha1[[2]][m] = univariate_lasso_rss(univariate_lasso_y,
+                                                     univariate_lasso_z,
+                                                     0, tiny) # alpha1 no penalty by KJG
+               
+               planes[[2]][, m] = alpha0[[2]][m] + alpha1[[2]][m] * predictors[, 2]
+               active_planes[[2]][, m] = bspline(planes[[2]][, m])
+               dev_active_planes[[2]][, m] = derivative_bspline(planes[[2]][, m])
+               tensor_active_planes[, m] = active_planes[[1]][, m] * active_planes[[2]][, m]
+               residuals = partial_residuals - beta[m] * tensor_active_planes[, m]
+            }
+         }
+         
+         # pruning
+         active_nodes = candidate_nodes[beta != 0]
+         number_active_nodes = length(active_nodes)
+         
+         # check convergence
+         R = 0.5 * mean(residuals^2)
+         penalty = sum(abs(beta[active_nodes]))
+         Rlambda = R + lambda * penalty
+         if(abs(Rlambda - stored_Rlambda) < epsilon_iterations)
+            break
+         stored_Rlambda = Rlambda
+         if(verbose2)
+            cat("\r", "R = ", R, "penalty = ", penalty, ", Rlambda = ", Rlambda)
+         
+         # storing coefficients for each iteration
+         # coef_iter = list(bias = bias,
+         #                  beta = beta[active_nodes],
+         #                  alpha01 = alpha0[[1]][active_nodes],
+         #                  alpha02 = alpha0[[2]][active_nodes],
+         #                  alpha11 = alpha1[[1]][active_nodes],
+         #                  alpha12 = alpha1[[2]][active_nodes],
+         #                  R = R,
+         #                  Rlambda = Rlambda)
+         # storing_lambda[[iter]] = coef_iter
+         
+      }
+      # results of each lambda
+      pruned_beta = beta[active_nodes]
+      pruned_alpha11 = alpha1[[1]][active_nodes]
+      pruned_alpha12 = alpha1[[2]][active_nodes]
+      pruned_alpha01 = alpha0[[1]][active_nodes]
+      pruned_alpha02 = alpha0[[2]][active_nodes]
+      fitted_values = response - residuals
+      dimension = number_active_nodes + 1
+      
+      BIC_list[lambda_index] = sample_size * log(R) + log(sample_size) * dimension
+      AIC_list[lambda_index] = sample_size * log(R) + 2 * dimension
+      risk_list[lambda_index] = R
+      
+      number_nodes_list[lambda_index] = number_active_nodes
+      iteration_list[lambda_index] = iter
+      
+      sdlb[[lambda_index]] = list(beta = pruned_beta,
+                                  bias = bias,
+                                  alpha01 = pruned_alpha01,
+                                  alpha02 = pruned_alpha02,
+                                  alpha11 = pruned_alpha11,
+                                  alpha12 = pruned_alpha12,
+                                  active_nodes = active_nodes,
+                                  fitted_values = fitted_values,
+                                  initial_active = initial_active_planes,
+                                  final_active = tensor_active_planes)
+                                  # storing_coef = storing_lambda)
+      
+      alpha0$alpha01[beta == 0] = alpha0_initial$alpha01[beta == 0]
+      alpha0$alpha02[beta == 0] = alpha0_initial$alpha02[beta == 0]
+      alpha1$alpha11[beta == 0] = alpha1_initial$alpha11[beta == 0]
+      alpha1$alpha12[beta == 0] = alpha1_initial$alpha12[beta == 0]
+      beta[beta == 0] = beta_initial[beta == 0]
+      active_nodes = candidate_nodes
+      
+      if(BIC_early_stopping)
+      {
+         lambda_index_opt = which.min(BIC_list)
+         
+         if(lambda_index_search - lambda_index_opt > BIC_early_stopping_crit)
+            break
+         
+         lambda_index_search = lambda_index_search + 1
+      }
+   }
+   sdlb$AIC_list = AIC_list
+   sdlb$BIC_list = BIC_list
+   sdlb$risk_list = risk_list
+   sdlb$number_nodes_list = number_nodes_list
+   sdlb$iteration_list = iteration_list
+   sdlb$lambda_list = lambda_list
+   cat("\n\n Done! \n\n")
+   return(sdlb)
+}
