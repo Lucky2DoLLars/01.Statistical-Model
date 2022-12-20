@@ -1,0 +1,223 @@
+## YJH
+# PRS in R from PRS in Rcpp
+
+#1.20
+# regularization argument : lambdas
+
+## LSE
+# 20.03.18
+# add knots and periodic version
+
+PRS_lambda_seq = function(predictors,
+                          responses,
+                          degree,
+                          dimension,
+                          lambdas,
+                          knots = 0,
+                          maxiter = 1000,
+                          epsilon_iterations = 1e-5,
+                          periodic = FALSE,
+                          verbose = FALSE,
+                          lower = 0, 
+                          upper = 1)
+{
+   # browser()
+   results = list()
+   sample_size = length(responses)
+   order = degree + 1
+   number_penalty = dimension - order
+   store_Rlambda = Inf
+   # initial value
+   if (periodic)
+   {
+      if (knots[1] == 0)
+      {
+         # initial knots
+         knots = knots_quantile(predictors, dimension, order)
+         knots = knots[-c(1:order, seq(length(knots), length(knots) - order + 1, -1))]
+         dimension = length(knots)
+         number_penalty = dimension - order
+      }
+      beta = rep(0, dimension)
+      basis = pbsplines(predictors, knots, order, 0)
+      jump = pbspline_jump(knots, order, transpose = T)
+      
+   }
+   else
+   {
+      if (knots[1] == 0)
+      {
+         # initial knots
+         knots = knots_quantile(predictors, dimension, order)
+      }
+      beta = rep(0, dimension)
+      basis = bsplines(predictors, knots, order, 0)
+      jump = bspline_jump(knots, order, transpose = T)
+   }
+   residuals = responses
+   # lambdas
+   number_lambdas = length(lambdas)
+   # aic, bic
+   aic_vector = bic_vector = dimension_vector = rep(0, number_lambdas)
+   # Moudle FIT
+   for (lambda_index in 1:number_lambdas)
+   {
+      lambda = lambdas[lambda_index]
+      if(verbose)
+         cat("\n lambda_index = ", lambda_index, "lambda = ", lambda)
+      for (iter in 1 : maxiter)
+      {
+         for (j in 1 : dimension)
+         {
+            bj = basis[,j]
+            partial_residuals = residuals + beta[j] * bj
+            b = sum(bj^2)
+            c = sum(bj * partial_residuals) / (b + 1e-30)
+            if (dimension == order)
+               beta[j] = c
+            else
+            {
+               rowjump_j = jump[j,]
+               nonzero_index = which(abs(rowjump_j) > 1e-30)
+               nonzero_size = length(nonzero_index)
+               d = rowjump_j[nonzero_index]
+               if (nonzero_size == 0)
+                  beta[j] = c
+               else
+               {
+                  a = vector(length = nonzero_size)
+                  for (k in 1:nonzero_size)
+                     a[k] = beta[j] - sum(jump[, nonzero_index[k]] * beta) / d[k]
+                  d = abs(d)
+                  beta[j] = find_minimizer_R(a, b, c, d, lambda)
+               }
+            }
+            ## monotone constraint skip
+            residuals = partial_residuals - beta[j] * bj
+         }
+         ## module prune
+         if (number_penalty > 0)
+         {
+            penalty = as.vector(t(jump) %*% beta)
+            penalty_check = (abs(penalty) < 1e-30)
+            if (sum(penalty_check) > 0)
+            {
+               ## recompute
+               prune_index = which(penalty_check)
+               beta = beta[-(prune_index)]
+               knots = knots[-(prune_index+order)]
+               if (periodic)
+               {
+                  dimension = length(knots)
+                  number_penalty = dimension - order
+                  if (number_penalty == 1)
+                  {
+                     dimension_vector[lambda_index] = dimension
+                     NlogR = sample_size * log(R / sample_size)
+                     bic_vector[lambda_index] = NlogR + dimension * log(sample_size)
+                     aic_vector[lambda_index] = NlogR + dimension * 2
+                     results[[lambda_index]] = list(lambda = lambda,
+                                                    dimension = dimension,
+                                                    beta = beta,
+                                                    fitted_value = fitted_value,
+                                                    knots = knots)
+                     results[[lambda_index+1]] = list(bic_vector = bic_vector[1:lambda_index],
+                                                      aic_vector = aic_vector[1:lambda_index],
+                                                      dimension_vector = dimension_vector[1:lambda_index],
+                                                      lambdas = lambdas[1:lambda_index])
+                     results[[number_lambdas+1]] = list(lambda_index = lambda_index)
+                     return(results)
+                  }
+                  basis = pbsplines(predictors, knots, order, 0)
+                  if (number_penalty > 0)
+                  {
+                     jump = pbspline_jump(knots, order, transpose = T)
+                  }
+               }
+               else
+               {
+                  dimension = length(beta)
+                  number_penalty = dimension - order
+                  basis = bsplines(predictors, knots, order, 0)
+                  if (number_penalty > 0)
+                  {
+                     jump = bspline_jump(knots, order, transpose = T)
+                  }   
+               }
+            }
+         }
+         ## update fitted value
+         fitted_value = basis %*% beta
+         residuals = responses - fitted_value
+         ## check convergence
+         R = 0.5 * sum(residuals^2)
+         if (number_penalty >0)
+            Rlambda = R + lambda * sum(abs((t(jump) %*% beta)))
+         else
+            Rlambda = R
+         if (abs(Rlambda - store_Rlambda) < epsilon_iterations * store_Rlambda)
+            break
+         store_Rlambda = Rlambda
+      }
+      ## results
+      dimension_vector[lambda_index] = dimension
+      NlogR = sample_size * log(R / sample_size)
+      bic_vector[lambda_index] = NlogR + dimension * log(sample_size)
+      aic_vector[lambda_index] = NlogR + dimension * 2
+      results[[lambda_index]] = list(lambda = lambda,
+                                     dimension = dimension,
+                                     beta = beta,
+                                     fitted_value = fitted_value,
+                                     knots = knots)
+   }
+   results[[number_lambdas+1]] = list(bic_vector = bic_vector,
+                                      aic_vector = aic_vector,
+                                      dimension_vector = dimension_vector,
+                                      lambdas = lambdas,
+                                      lambda_index = lambda_index)
+   return(results)
+}
+
+
+# R-version find_minimizer
+find_minimizer_R = function(a, b, c, d, lambda)
+{
+   # make delta_d
+   order_a_index = order(a)
+   order_d = d[order_a_index]
+   cumsum_order_d = cumsum(order_d)
+   delta_d = 2 * cumsum_order_d - sum(d)
+   delta_d = append(-sum(d), delta_d)
+   # enumerate candidates of minimizer
+   minimizer_candidate1 = c - lambda * delta_d / b
+   minimizer_candidate = c(minimizer_candidate1, a)
+   minimizer_candidate = sort(minimizer_candidate)
+   # Initialize minimizer
+   minimizer = minimizer_candidate[1]
+   rss_lambda_minimizer = univariate_rss_lambda_R(minimizer, a, b, c, d, lambda)
+   # find minimizer
+   for(i in 2:length(minimizer_candidate))
+   {
+      rss_lambda = univariate_rss_lambda_R(minimizer_candidate[i],
+                                           a, b, c, d, lambda)
+      # we can break since the function is convex
+      # add tiny number(1e-8) because of numerical error
+      if(rss_lambda - 1e-8 > rss_lambda_minimizer)
+         return(minimizer)
+      minimizer = minimizer_candidate[i]
+      rss_lambda_minimizer = rss_lambda
+   }
+   return(minimizer)
+}
+
+# R-version univariate_rss_lambda
+univariate_rss_lambda_R = function(candidate,
+                                   a, b, c, d, lambda)
+{
+   rss_lambda = 0
+   rss_lambda = 0.5 * b * (candidate - c) * (candidate - c)
+   rss_lambda = rss_lambda + lambda * sum(d * abs(candidate - a))
+   return(rss_lambda);
+}
+
+#####
